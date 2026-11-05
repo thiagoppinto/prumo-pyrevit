@@ -258,6 +258,7 @@ def _escrever_linhas(doc, vista, linhas):
     passo = altura * max(int(vista.Scale or 100), 1) * 1.8  # espaçamento no modelo (pés)
     for i, linha in enumerate(linhas):
         DB.TextNote.Create(doc, vista.Id, DB.XYZ(0, -i * passo, 0), linha, tipo_id)
+    doc.Regenerate()  # a extensão da vista só vale depois de regenerar; o viewport usa isso para se centralizar
 
 
 def op_create_views(ctx, cmd):
@@ -383,12 +384,16 @@ def op_place_views(ctx, cmd):
             if _id(vp.ViewId) == _id(vista.Id):
                 existente = vp
         if existente is not None:
+            doc.Regenerate()
             existente.SetBoxCenter(pt)
             ctx.rel("place_views", _nome(vista), "atualizado", folha.SheetNumber)
             continue
         if not DB.Viewport.CanAddViewToSheet(doc, folha.Id, vista.Id):
             raise ValueError("A vista '{}' já está em outra prancha (use create_views tipo duplicar).".format(_nome(vista)))
         vp = DB.Viewport.Create(doc, folha.Id, vista.Id, pt)
+        if isinstance(vista, DB.ViewDrafting):
+            doc.Regenerate()
+            vp.SetBoxCenter(pt)  # vistas de desenho mudam de tamanho com o texto: recentraliza depois de regenerar
         ctx.rel("place_views", _nome(vista), "colocado", folha.SheetNumber, vp)
     for tb in cmd.get("tabelas") or []:
         folha = _folha(ctx, tb["folha"])
