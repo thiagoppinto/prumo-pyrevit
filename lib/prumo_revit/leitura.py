@@ -237,7 +237,8 @@ def _vista(doc, v):
     try:
         disc = _param(v, DB.BuiltInParameter.VIEW_DISCIPLINE)
         if disc is not None:
-            d["discipline"] = disc
+            d["discipline"] = {1: "Arquitetura", 2: "Estrutura", 4: "Mecanica", 8: "Eletrica", 16: "Hidraulica",
+                               4095: "Coordenacao"}.get(disc, disc)
     except Exception:
         pass
     return d
@@ -315,7 +316,8 @@ def padrao(doc, limite=300):
                 except Exception:
                     pass
                 try:
-                    item["viewport_type"] = _nome(doc.GetElement(vp.GetTypeId()))
+                    vt = doc.GetElement(vp.GetTypeId())
+                    item["viewport_type"] = _param(vt, DB.BuiltInParameter.ALL_MODEL_TYPE_NAME) or _nome(vt)
                 except Exception:
                     pass
             if item.get("scale"):
