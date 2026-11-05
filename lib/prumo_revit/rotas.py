@@ -105,6 +105,27 @@ def registrar(api):
         except Exception as e:
             return _erro(e)
 
+    @api.route("/script/", methods=["POST"])
+    def prumo_roteiro(doc, request):
+        """Roteiro escrito pelo assistente: valida, simula (desfaz) ou aplica (ver roteiro.py). 403 sem a flag de escrita."""
+        n = negar(request)
+        if n is not None:
+            return n
+        try:
+            from . import roteiro
+            from .escrita import Recusa
+            c = _corpo(request)
+            return routes.make_response(data=roteiro.executar(
+                _doc(request), c.get("code"), c.get("mode") or "simular", c.get("plan_id"), bool(c.get("confirm"))))
+        except Recusa as e:
+            return _erro(e, e.status)
+        except LookupError as e:
+            return _erro(e, 404)
+        except ValueError as e:
+            return _erro(e, 400)
+        except Exception as e:
+            return _erro(e)
+
     @api.route("/audit/", methods=["POST"])
     def prumo_auditoria(doc, request):
         """Conferência de padrão: coleta só leitura (as regras ficam no hub)."""
