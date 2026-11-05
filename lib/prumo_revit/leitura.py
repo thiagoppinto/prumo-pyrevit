@@ -307,7 +307,23 @@ def inventario(doc):
         marca = suporte_marca(doc)
     except Exception:
         marca = None
-    return {"views": vistas, "schedules": sorted(tabelas), "titleblock_types": carimbos, "levels": niveis, "tag_support": marca}
+    # ambientes colocados (base do quadro de áreas): área em m² (o Revit guarda pés²)
+    ambientes = []
+    for r in _col(doc, "OST_Rooms"):
+        try:
+            if r.Location is None or not r.Area or r.Area <= 0:
+                continue
+            ambientes.append({
+                "name": _param(r, DB.BuiltInParameter.ROOM_NAME) or "",
+                "number": r.Number or "",
+                "level": _nome(r.Level) if r.Level is not None else "",
+                "area_m2": round(r.Area * 0.09290304, 2),
+            })
+        except Exception:
+            continue
+        if len(ambientes) >= 2000:
+            break
+    return {"views": vistas, "schedules": sorted(tabelas), "titleblock_types": carimbos, "levels": niveis, "tag_support": marca, "rooms": ambientes}
 
 
 def padrao(doc, limite=300):

@@ -26,7 +26,8 @@ CAMPOS = {
     "place_views": {"op", "items", "tabelas"},
     "remove_tagged": {"op", "plano_id"},
 }
-CAMPOS_VISTA = {"key", "tipo", "nivel", "nome", "escala", "modelo_vista", "origem", "tipo_vista"}
+CAMPOS_VISTA = {"key", "tipo", "nivel", "nome", "escala", "modelo_vista", "origem", "tipo_vista", "linhas"}
+MAX_LINHAS = 200
 CAMPOS_FOLHA = {"key", "numero", "nome", "carimbo", "parametros"}
 CAMPOS_COLOCAR = {"folha", "vista", "x", "y"}
 CAMPOS_TABELA = {"folha", "nome", "x", "y"}
@@ -81,8 +82,12 @@ def validar(comandos):
                 raise ValueError("{}: item inválido.".format(c["op"]))
             if c["op"] == "create_views":
                 _checar(it, CAMPOS_VISTA, "create_views.item")
-                if it.get("tipo") not in ("planta", "duplicar"):
-                    raise ValueError("create_views.tipo deve ser planta ou duplicar.")
+                if it.get("tipo") not in ("planta", "duplicar", "desenho_texto"):
+                    raise ValueError("create_views.tipo deve ser planta, duplicar ou desenho_texto.")
+                if it.get("tipo") == "desenho_texto":
+                    ln = it.get("linhas")
+                    if not isinstance(ln, list) or not ln or len(ln) > MAX_LINHAS or not all(isinstance(x, (str, type(u""))) and len(x) <= 160 for x in ln):
+                        raise ValueError("desenho_texto exige 'linhas' (lista de textos, até {} linhas de 160 caracteres).".format(MAX_LINHAS))
             elif c["op"] == "create_sheets":
                 _checar(it, CAMPOS_FOLHA, "create_sheets.item")
             else:
@@ -240,6 +245,21 @@ def _achar_marcado(ctx, cls, chave):
     return None
 
 
+def _escrever_linhas(doc, vista, linhas):
+    """Texto do quadro numa vista de desenho: apaga os textos da vista e escreve de novo, uma nota por linha."""
+    for tn in list(_col(doc, cls=DB.TextNote, view_id=vista.Id)):
+        doc.Delete(tn.Id)
+    tipo_id = doc.GetDefaultElementTypeId(DB.ElementTypeGroup.TextNoteType)
+    tipo = doc.GetElement(tipo_id)
+    try:
+        altura = tipo.get_Parameter(DB.BuiltInParameter.TEXT_SIZE).AsDouble()  # pés, no papel
+    except Exception:
+        altura = 2.5 / PES_MM
+    passo = altura * max(int(vista.Scale or 100), 1) * 1.8  # espaçamento no modelo (pés)
+    for i, linha in enumerate(linhas):
+        DB.TextNote.Create(doc, vista.Id, DB.XYZ(0, -i * passo, 0), linha, tipo_id)
+
+
 def op_create_views(ctx, cmd):
     doc = ctx.doc
     for it in cmd.get("items") or []:
@@ -249,9 +269,18 @@ def op_create_views(ctx, cmd):
         existente = _achar_marcado(ctx, DB.View, chave)
         if existente is not None:
             ctx.mapa[chave] = existente
-            ctx.rel("create_views", chave, "existente", el=existente)
+            if it["tipo"] == "desenho_texto":
+                _escrever_linhas(doc, existente, it["linhas"])
+                ctx.rel("create_views", chave, "atualizado", "texto refeito", existente)
+            else:
+                ctx.rel("create_views", chave, "existente", el=existente)
             continue
-        if it["tipo"] == "planta":
+        if it["tipo"] == "desenho_texto":
+            tipos = [t for t in _col(doc, cls=DB.ViewFamilyType, tipos=True) if t.ViewFamily == DB.ViewFamily.Drafting]
+            if not tipos:
+                raise ValueError("O modelo não tem tipo de vista de desenho (Drafting).")
+            v = DB.ViewDrafting.Create(doc, tipos[0].Id)
+        elif it["tipo"] == "planta":
             nivel = _nivel(doc, it.get("nivel"))
             if nivel is None:
                 raise ValueError("Nível não encontrado: {}".format(it.get("nivel")))
@@ -276,6 +305,8 @@ def op_create_views(ctx, cmd):
                 # o modelo pode controlar a escala; a escala do plano prevalece só se o modelo não a controla
                 pass
         _marcar(v, ctx.marca(chave))
+        if it["tipo"] == "desenho_texto":
+            _escrever_linhas(doc, v, it["linhas"])
         ctx.mapa[chave] = v
         ctx.rel("create_views", chave, "criado" if nome == (it.get("nome") or chave) else "criado (renomeado)", nome, v)
 
