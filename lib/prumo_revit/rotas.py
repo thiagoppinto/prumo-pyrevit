@@ -12,12 +12,26 @@ from .seguranca import negar
 logger = logging.getLogger(__name__)
 
 
+def _conserta(o):
+    """O servidor de rotas do pyRevit lê o corpo como latin-1: UTF-8 chega como 'TÃRREO'. Desfaz isso."""
+    if isinstance(o, dict):
+        return dict((_conserta(k), _conserta(v)) for k, v in o.items())
+    if isinstance(o, list):
+        return [_conserta(x) for x in o]
+    try:
+        if any(ord(c) > 127 for c in o):
+            return o.encode("latin-1").decode("utf-8")
+    except Exception:
+        pass
+    return o
+
+
 def _corpo(request):
     d = request.data
     if isinstance(d, dict):
-        return d
+        return _conserta(d)
     try:
-        return json.loads(d) if d else {}
+        return _conserta(json.loads(d)) if d else {}
     except Exception:
         return {}
 
