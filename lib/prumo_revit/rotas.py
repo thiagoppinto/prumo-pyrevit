@@ -105,6 +105,20 @@ def registrar(api):
         except Exception as e:
             return _erro(e)
 
+    @api.route("/audit/", methods=["POST"])
+    def prumo_auditoria(doc, request):
+        """Conferência de padrão: coleta só leitura (as regras ficam no hub)."""
+        n = negar(request)
+        if n is not None:
+            return n
+        try:
+            from . import auditoria
+            return routes.make_response(data=auditoria.auditoria(_doc(request)))
+        except LookupError as e:
+            return _erro(e, 404)
+        except Exception as e:
+            return _erro(e)
+
     @api.route("/standard/", methods=["POST"])
     def prumo_padrao(doc, request):
         n = negar(request)
