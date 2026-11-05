@@ -1,0 +1,14 @@
+{
+    "builtin": "True",
+    "default_enabled": "True",
+    "type": "extension",
+    "rocket_mode_compatible": "True",
+    "name": "prumo",
+    "description": "Prumo local routes for the Prumo agent.",
+    "author": "TPO Engenharia",
+    "author_profile": "https://mcp.tpoengenharia.com.br",
+    "url": "https://github.com/thiagoppinto/prumo-hub.git",
+    "website": "https://mcp.tpoengenharia.com.br",
+    "image": "",
+    "dependencies": []
+}
