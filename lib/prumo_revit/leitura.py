@@ -214,7 +214,53 @@ def _vista(doc, v):
         d["detail_level"] = str(v.DetailLevel)
     except Exception:
         pass
+    # profundidade de corte / faixa da vista (só plantas): alturas em mm relativas ao nível associado
+    try:
+        if isinstance(v, DB.ViewPlan):
+            vr = v.GetViewRange()
+            d["view_range"] = {
+                "cut_mm": _mm(vr.GetOffset(DB.PlanViewPlane.CutPlane)),
+                "top_mm": _mm(vr.GetOffset(DB.PlanViewPlane.TopClipPlane)),
+                "bottom_mm": _mm(vr.GetOffset(DB.PlanViewPlane.BottomClipPlane)),
+                "depth_mm": _mm(vr.GetOffset(DB.PlanViewPlane.ViewDepthPlane)),
+            }
+    except Exception:
+        pass
+    try:
+        d["filters"] = len(list(v.GetFilters()))
+    except Exception:
+        pass
+    try:
+        d["crop"] = bool(v.CropBoxActive)
+    except Exception:
+        pass
+    try:
+        disc = _param(v, DB.BuiltInParameter.VIEW_DISCIPLINE)
+        if disc is not None:
+            d["discipline"] = disc
+    except Exception:
+        pass
     return d
+
+
+def _params_texto(el, limite=40):
+    """Parâmetros de texto preenchidos de um elemento (nome → valor): o que alimenta o carimbo."""
+    out = {}
+    try:
+        for p in el.Parameters:
+            if len(out) >= limite:
+                break
+            try:
+                if p.StorageType != DB.StorageType.String or not p.HasValue:
+                    continue
+                val = p.AsString()
+                if val:
+                    out[p.Definition.Name] = val[:120]
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return out
 
 
 def padrao(doc, limite=300):
@@ -250,26 +296,34 @@ def padrao(doc, limite=300):
         alt = (sy1 - sy0) or 1.0
 
         vistas = []
+        viewports = {}
+        for vp in _col(doc, cls=DB.Viewport, view_id=s.Id):
+            viewports[_id(vp.ViewId)] = vp
         for vid in s.GetAllPlacedViews():
             v = doc.GetElement(vid)
             if v is None:
                 continue
             item = _vista(doc, v)
-            for vp in _col(doc, cls=DB.Viewport, view_id=s.Id):
-                if _id(vp.ViewId) == _id(vid):
-                    c = vp.GetBoxCenter()
-                    item["center"] = [round((c.X - sx0) / larg, 3), round((c.Y - sy0) / alt, 3)]
-                    try:
-                        o = vp.GetBoxOutline()
-                        item["box_mm"] = [_mm(o.MaximumPoint.X - o.MinimumPoint.X), _mm(o.MaximumPoint.Y - o.MinimumPoint.Y)]
-                    except Exception:
-                        pass
-                    break
+            vp = viewports.get(_id(vid))
+            if vp is not None:
+                # center: fração da folha, X da esquerda para a direita, Y de BAIXO para CIMA (como o Revit)
+                c = vp.GetBoxCenter()
+                item["center"] = [round((c.X - sx0) / larg, 3), round((c.Y - sy0) / alt, 3)]
+                try:
+                    o = vp.GetBoxOutline()
+                    item["box_mm"] = [_mm(o.MaximumPoint.X - o.MinimumPoint.X), _mm(o.MaximumPoint.Y - o.MinimumPoint.Y)]
+                except Exception:
+                    pass
+                try:
+                    item["viewport_type"] = _nome(doc.GetElement(vp.GetTypeId()))
+                except Exception:
+                    pass
             if item.get("scale"):
                 escalas[item["scale"]] = escalas.get(item["scale"], 0) + 1
             vistas.append(item)
 
         tabelas = []
+        tabelas_pos = []
         for si in _col(doc, cls=DB.ScheduleSheetInstance, view_id=s.Id):
             try:
                 if si.IsTitleblockRevisionSchedule:
@@ -279,6 +333,11 @@ def padrao(doc, limite=300):
             sch = doc.GetElement(si.ScheduleId)
             if sch is not None:
                 tabelas.append(_nome(sch))
+                try:
+                    p = si.Point
+                    tabelas_pos.append({"name": _nome(sch), "origin": [round((p.X - sx0) / larg, 3), round((p.Y - sy0) / alt, 3)]})
+                except Exception:
+                    tabelas_pos.append({"name": _nome(sch)})
 
         tipos = sorted(set(v["type"] for v in vistas))
         tipos_por_prancha[" + ".join(tipos) or "(vazia)"] = tipos_por_prancha.get(" + ".join(tipos) or "(vazia)", 0) + 1
@@ -299,6 +358,9 @@ def padrao(doc, limite=300):
             "titleblock": tb,
             "views": vistas,
             "schedules": tabelas,
+            "schedule_items": tabelas_pos,
+            "titleblock_params": _params_texto(next(iter(_col(doc, "OST_TitleBlocks", view_id=s.Id)), None)) if tb else {},
+            "sheet_params": _params_texto(s),
             "revisions": revs,
             "current_revision": _param(s, DB.BuiltInParameter.SHEET_CURRENT_REVISION),
         })
