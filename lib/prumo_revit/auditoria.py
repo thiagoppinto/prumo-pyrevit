@@ -13,6 +13,21 @@ M2 = 0.09290304
 TIPOS_VISTA_IGNORADOS = ("ProjectBrowser", "SystemBrowser", "Internal", "Undefined", "Schedule", "ColumnSchedule", "PanelSchedule")
 
 
+def _nome_tipo(el):
+    """Nome de um TIPO (símbolo/tipo de vínculo): Element.Name vem vazio em alguns tipos; cai para os parâmetros."""
+    n = _nome(el)
+    if n:
+        return n
+    for bip in ("SYMBOL_NAME_PARAM", "ALL_MODEL_TYPE_NAME", "SYMBOL_FAMILY_AND_TYPE_NAMES_PARAM"):
+        try:
+            v = _param(el, getattr(DB.BuiltInParameter, bip))
+            if v:
+                return str(v)
+        except Exception:
+            continue
+    return ""
+
+
 def _marcados(doc, categorias):
     """Ids dos elementos que têm pelo menos uma etiqueta (tag) em alguma vista."""
     ids = set()
@@ -44,7 +59,7 @@ def _esquadrias(doc, categoria, categorias_tag):
             nivel = doc.GetElement(el.LevelId) if _id(el.LevelId) > 0 else None
             itens.append({
                 "id": _id(el.Id),
-                "type": _nome(tipo) if tipo is not None else "",
+                "type": _nome_tipo(tipo) if tipo is not None else "",
                 "family": getattr(tipo, "FamilyName", "") if tipo is not None else "",
                 "mark": _param(el, DB.BuiltInParameter.ALL_MODEL_MARK) or "",
                 "type_mark": (_param(tipo, DB.BuiltInParameter.ALL_MODEL_TYPE_MARK) if tipo is not None else "") or "",
@@ -141,7 +156,7 @@ def _pranchas(doc):
                 if u0 is not None:
                     try:
                         o = vp.GetBoxOutline()
-                        tol = 0.01  # ~3 mm
+                        tol = 0.16  # ~50 mm: a caixa da vista inclui margens de anotação e passa um pouco da folha em projetos reais
                         fora = (o.MinimumPoint.X < u0 - tol or o.MinimumPoint.Y < v0 - tol
                                 or o.MaximumPoint.X > u1 + tol or o.MaximumPoint.Y > v1 + tol)
                     except Exception:
@@ -152,7 +167,11 @@ def _pranchas(doc):
                 except Exception:
                     pass
                 vps.append({"view": _nome(v), "outside": fora, "no_crop": sem_recorte})
-            itens.append({"number": s.SheetNumber, "name": s.Name, "titleblock": bool(tbs), "params": params, "viewports": vps})
+            try:
+                n_tabelas = len(list(_col(doc, cls=DB.ScheduleSheetInstance, view_id=s.Id)))
+            except Exception:
+                n_tabelas = 0
+            itens.append({"number": s.SheetNumber, "name": s.Name, "titleblock": bool(tbs), "params": params, "viewports": vps, "schedules": n_tabelas})
         except Exception:
             continue
     return itens
@@ -186,7 +205,7 @@ def _modelo(doc):
         for t in _col(doc, cls=DB.RevitLinkType, tipos=True):
             try:
                 if str(t.GetLinkedFileStatus()) != "Loaded":
-                    m["links_unloaded"].append(_nome(t))
+                    m["links_unloaded"].append("{} ({})".format(_nome_tipo(t) or "sem nome", str(t.GetLinkedFileStatus())))
             except Exception:
                 continue
     except Exception:
@@ -205,7 +224,7 @@ def _modelo(doc):
                     continue
                 n += 1
                 if len(amostra) < 15:
-                    amostra.append("{}: {}".format(getattr(s, "FamilyName", ""), _nome(s)))
+                    amostra.append("{}: {}".format(getattr(s, "FamilyName", ""), _nome_tipo(s)))
             except Exception:
                 continue
         m["unused_types"] = n
