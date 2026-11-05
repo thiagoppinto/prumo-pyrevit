@@ -264,6 +264,52 @@ def _params_texto(el, limite=40):
     return out
 
 
+def _marca_de(el):
+    """Marca TPO|<plano>|<chave> gravada pelo motor de pranchas (vazio se não houver)."""
+    try:
+        from .escrita import _ler_marca
+        m = _ler_marca(el)
+        return m if m.startswith("TPO|") else ""
+    except Exception:
+        return ""
+
+
+def inventario(doc):
+    """O que existe no modelo para o motor de pranchas: vistas (e se já estão em prancha), níveis, tabelas, carimbos."""
+    colocadas = {}
+    for vp in _col(doc, cls=DB.Viewport):
+        try:
+            colocadas[_id(vp.ViewId)] = doc.GetElement(vp.SheetId).SheetNumber
+        except Exception:
+            pass
+    vistas = []
+    for v in _col(doc, cls=DB.View):
+        if v.IsTemplate or isinstance(v, DB.ViewSheet):
+            continue
+        t = str(v.ViewType)
+        if t in ("ProjectBrowser", "SystemBrowser", "Internal", "Undefined", "Schedule", "ColumnSchedule", "PanelSchedule"):
+            continue
+        item = _vista(doc, v)
+        item["on_sheet"] = colocadas.get(_id(v.Id))
+        for k in ("view_range", "filters", "crop", "discipline"):
+            item.pop(k, None)
+        vistas.append(item)
+    tabelas = [_nome(s) for s in _col(doc, cls=DB.ViewSchedule) if not s.IsTitleblockRevisionSchedule and not s.IsInternalKeynoteSchedule]
+    carimbos = []
+    for s in _col(doc, "OST_TitleBlocks", tipos=True):
+        w = _param(s, DB.BuiltInParameter.SHEET_WIDTH)
+        h = _param(s, DB.BuiltInParameter.SHEET_HEIGHT)
+        carimbos.append({"family": getattr(s, "FamilyName", ""), "type": _nome(s),
+                         "width_mm": _mm(w) if isinstance(w, float) else None, "height_mm": _mm(h) if isinstance(h, float) else None})
+    niveis = sorted([{"name": _nome(l), "elevation_mm": _mm(l.Elevation)} for l in _col(doc, cls=DB.Level)], key=lambda x: x["elevation_mm"])
+    try:
+        from .escrita import suporte_marca
+        marca = suporte_marca(doc)
+    except Exception:
+        marca = None
+    return {"views": vistas, "schedules": sorted(tabelas), "titleblock_types": carimbos, "levels": niveis, "tag_support": marca}
+
+
 def padrao(doc, limite=300):
     """Como o escritório documenta: carimbos, formatos, pranchas e o que vai em cada uma."""
     folhas = [s for s in _col(doc, cls=DB.ViewSheet) if not s.IsPlaceholder]
@@ -366,6 +412,7 @@ def padrao(doc, limite=300):
             "sheet_params": _params_texto(s),
             "revisions": revs,
             "current_revision": _param(s, DB.BuiltInParameter.SHEET_CURRENT_REVISION),
+            "tpo_tag": _marca_de(s),
         })
 
     modelos_vista = sorted(set(_nome(v) for v in _col(doc, cls=DB.View) if v.IsTemplate))
@@ -379,5 +426,6 @@ def padrao(doc, limite=300):
         "scales": escalas,
         "sheet_compositions": tipos_por_prancha,
         "view_templates": modelos_vista,
+        "inventory": inventario(doc),
         "sheets": pranchas,
     }

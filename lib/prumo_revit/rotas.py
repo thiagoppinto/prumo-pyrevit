@@ -70,6 +70,27 @@ def registrar(api):
         except Exception as e:
             return _erro(e)
 
+    @api.route("/apply/", methods=["POST"])
+    def prumo_aplicar(doc, request):
+        """Escrita: lista fechada de operações em transação única (ver escrita.py). 403 sem a flag de escrita."""
+        n = negar(request)
+        if n is not None:
+            return n
+        try:
+            from . import escrita
+            c = _corpo(request)
+            return routes.make_response(data=escrita.aplicar(
+                _doc(request), c.get("commands"), c.get("plan_id") or c.get("plano_id"),
+                c.get("mode") or "dry_run", bool(c.get("confirm"))))
+        except escrita.Recusa as e:
+            return _erro(e, e.status)
+        except LookupError as e:
+            return _erro(e, 404)
+        except ValueError as e:
+            return _erro(e, 400)
+        except Exception as e:
+            return _erro(e)
+
     @api.route("/standard/", methods=["POST"])
     def prumo_padrao(doc, request):
         n = negar(request)
