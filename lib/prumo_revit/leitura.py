@@ -356,6 +356,7 @@ def padrao(doc, limite=300):
             "name": s.Name,
             "format": fmt,
             "titleblock": tb,
+            "outline_mm": [_mm(larg), _mm(alt)],  # base do normalizado de "center" (pode diferir do tamanho do carimbo)
             "views": vistas,
             "schedules": tabelas,
             "schedule_items": tabelas_pos,
